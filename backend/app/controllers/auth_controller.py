@@ -21,7 +21,13 @@ def render_login_page():
         return redirect(url_for("pages.render_home"))
     auth_service = AuthService(AuthRepository())
     csrf_token = auth_service.issue_csrf_token(g.client_id)
-    response = make_response(render_template("auth/login.html", csrf_token=csrf_token))
+    response = make_response(
+        render_template(
+            "auth/login.html",
+            csrf_token=csrf_token,
+            show_seeded_credentials=bool(current_app.config.get("SHOW_SEEDED_CREDENTIALS", False)),
+        )
+    )
     response.set_cookie("client_id", g.client_id, **_cookie_kwargs(httponly=True))
     response.set_cookie("csrf_token", csrf_token, **_cookie_kwargs(httponly=False))
     return response

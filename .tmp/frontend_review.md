@@ -1,116 +1,91 @@
-1. Verdict
+# 1. Verdict
 - Partial Pass
 
-2. Scope and Verification Boundary
-- what was reviewed
-- `README.md`, `frontend/README.md`, the Flask templates/static assets that make up the frontend, frontend test files, and the backend route/template files that directly power the SSR/HTMX user interface.
-- what input sources were excluded, including `./.tmp/`
-- Everything under `./.tmp/` was excluded as a source of truth and was not used as review evidence.
-- what was not executed
-- No Docker command, manual browser walkthrough, visual screenshot comparison, or external simulator integration was executed.
-- whether Docker-based verification was required but not executed
-- Yes. Docker startup is documented in `README.md:9` and `README.md:59`, but Docker-based verification was not executed per the review constraint.
-- what remains unconfirmed
-- Real browser rendering/animation behavior, cross-browser file-upload preview behavior, and live Docker startup behavior remain unconfirmed.
-- additional verification performed
-- `bash ./run_tests.sh` was executed from repo root on 2026-03-29 and completed with backend unit `49 passed`, backend API `34 passed`, frontend route `8 passed`, and frontend unit `3 passed`.
+# 2. Scope and Verification Boundary
+- Reviewed frontend deliverable as integrated SSR frontend (not SPA) using non-.tmp sources: [repo/frontend/README.md](repo/frontend/README.md), SSR templates under [repo/backend/app/templates](repo/backend/app/templates), frontend static assets under [repo/backend/app/static](repo/backend/app/static), and frontend/backend test suites under [repo/frontend](repo/frontend) and [repo/backend](repo/backend).
+- Explicitly excluded all files under ./.tmp from evidence collection, per review rule.
+- Runtime execution was not performed in this review pass.
+- Docker-based runtime verification was documented in [repo/README.md](repo/README.md#L11) but not executed due review boundary.
+- What remains unconfirmed: live browser rendering behavior across real devices, true interaction latency under runtime load, and end-to-end user flow execution in this environment.
+- Local reproduction commands (not executed here):
+1. docker compose up --build -d
+2. docker compose ps
+3. PYTHONPATH=backend python -m pytest frontend/API_tests -q
+4. PYTHONPATH=backend python -m pytest frontend/unit_tests -q
 
-3. Top Findings
-- Severity: High
-- Conclusion: The manager UI does not let Store Managers configure availability windows or rich pricing/option models from the frontend.
-- Brief rationale: The prompt requires managers to configure dish options, add-ons, size upcharges, and availability windows. The rendered form hardcodes an empty `availability_windows` payload and one default option JSON blob, and existing dish cards only expose publish/unpublish and image upload.
-- Evidence: `backend/app/templates/manager/dishes.html:16-18`; `backend/app/templates/partials/manager_dish_row.html:4-18`.
-- Impact: A core manager workflow is only partially delivered in the actual UI.
-- Minimum actionable fix: Replace the hidden JSON fields with real controls for availability windows, option groups, required rules, and price deltas, and add edit controls for existing dishes.
+# 3. Top Findings
+1. Severity: High  
+Conclusion: Plaintext seeded credentials are exposed in the login UI.  
+Brief rationale: Credentials are directly rendered on an unauthenticated page.  
+Evidence: [repo/backend/app/templates/auth/login.html](repo/backend/app/templates/auth/login.html#L23), [repo/backend/app/templates/auth/login.html](repo/backend/app/templates/auth/login.html#L25), [repo/backend/app/templates/auth/login.html](repo/backend/app/templates/auth/login.html#L27), [repo/backend/app/templates/auth/login.html](repo/backend/app/templates/auth/login.html#L28).  
+Impact: In any environment beyond isolated local review, this creates immediate account-compromise risk and weakens trust boundaries.  
+Minimum actionable fix: Hide seeded credentials behind explicit local-review flag and remove them from production-facing templates.
 
-- Severity: High
-- Conclusion: The refund workspace cannot complete a step-up confirmation from the UI.
-- Brief rationale: Users can submit a refund request, but once the backend places it into `pending_stepup`, the frontend only renders instructional text and no confirmation form.
-- Evidence: `backend/app/templates/finance/refunds.html:6-14`; `backend/app/templates/partials/refund_status.html:8-9`.
-- Impact: A required secure refund workflow cannot be completed from the delivered frontend without dropping to direct API calls.
-- Minimum actionable fix: Add a step-up confirmation form in the refund workspace with password/approval input and automatic `refund:confirm` nonce handling.
+2. Severity: Medium  
+Conclusion: Frontend test pyramid lacks component tests and runnable E2E coverage.  
+Brief rationale: Route/API-level and session unit tests exist, but no component-level suite and no E2E test files were found.  
+Evidence: route and session tests at [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L19), [repo/frontend/API_tests/test_htmx_feedback.py](repo/frontend/API_tests/test_htmx_feedback.py#L65), [repo/frontend/unit_tests/test_session_isolation.py](repo/frontend/unit_tests/test_session_isolation.py#L61); empty E2E directory at [repo/frontend/e2e](repo/frontend/e2e); no component-test files found under frontend test patterns in this review.  
+Impact: Material user-flow regressions and browser-specific breakages can slip through despite API-route tests passing.  
+Minimum actionable fix: Add at least one E2E smoke journey and one component-level test suite for high-churn UI blocks.
 
-- Severity: Medium
-- Conclusion: The payments workspace does not expose callback verification preview or the JSAPI simulator flow, even though the backend provides both endpoints.
-- Brief rationale: The rendered workspace only offers payment capture and raw callback import. Verification preview and simulator actions remain API-only.
-- Evidence: `backend/app/templates/finance/workspace.html:5-25`; `backend/app/routes/payments.py:16-19`.
-- Impact: The offline training/testing workspace described in the prompt is only partially surfaced in the UI.
-- Minimum actionable fix: Add UI controls for callback verification preview and JSAPI simulator submission, and render the resulting status back into the workspace.
+3. Severity: Medium  
+Conclusion: Progressive-enhancement submit handling has no visible duplicate-submission guard.  
+Brief rationale: Form submit handler directly dispatches async fetch without setting a submitting lock or disabling controls.  
+Evidence: submit and fetch path in [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L146) and [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L169); no disabled or isSubmitting guard tokens found in this file during static search.  
+Impact: Rapid repeat clicks can produce duplicated requests and inconsistent UI feedback for non-idempotent actions.  
+Minimum actionable fix: Add per-form pending state lock, disable submit controls while in flight, and add regression tests for rapid-click behavior.
 
-- Severity: High
-- Conclusion: The delivery documentation points to nonexistent `fullstack` paths, including the frontend-specific README.
-- Brief rationale: The project can be tested from repo root, but the documented frontend/source-of-truth locations and commands do not match the actual checkout.
-- Evidence: `README.md:7`; `README.md:24`; `README.md:32-37`; `frontend/README.md:4-14`; static repo listing during review showed `backend/`, `frontend/`, `README.md`, and `run_tests.sh` at repo root with no `fullstack/` directory.
-- Impact: This weakens the mandatory runnability gate and makes frontend review harder than the documentation claims.
-- Minimum actionable fix: Update both READMEs so they reference the actual repo layout and executable commands.
+# 4. Security Summary
+- authentication / login-state handling: Partial Pass  
+Evidence: login/logout/session boundaries are tested in [repo/frontend/unit_tests/test_session_isolation.py](repo/frontend/unit_tests/test_session_isolation.py#L29) and [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L31); however plaintext seeded credentials are exposed on login page at [repo/backend/app/templates/auth/login.html](repo/backend/app/templates/auth/login.html#L25).
+- frontend route protection / route guards: Pass  
+Evidence: unauthorized vs authorized page access coverage in [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L39) and [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L51).
+- page-level / feature-level access control: Pass  
+Evidence: backend role checks for privileged areas, for example [repo/backend/app/controllers/catalog_controller.py](repo/backend/app/controllers/catalog_controller.py#L119), [repo/backend/app/controllers/moderation_controller.py](repo/backend/app/controllers/moderation_controller.py#L86), [repo/backend/app/services/payment_service.py](repo/backend/app/services/payment_service.py#L52).
+- sensitive information exposure: Partial Pass  
+Evidence: seeded credential display in [repo/backend/app/templates/auth/login.html](repo/backend/app/templates/auth/login.html#L25); positive note that sensitive payment key plaintext is not returned in API test assertion at [repo/backend/API_tests/test_payment_api.py](repo/backend/API_tests/test_payment_api.py#L77).
+- cache / state isolation after switching users: Pass  
+Evidence: isolation tests at [repo/frontend/unit_tests/test_session_isolation.py](repo/frontend/unit_tests/test_session_isolation.py#L42) and [repo/frontend/unit_tests/test_session_isolation.py](repo/frontend/unit_tests/test_session_isolation.py#L61).
 
-4. Security Summary
-- authentication / login-state handling
-- Pass
-- brief evidence or verification-boundary explanation
-- SSR login boundary and redirect behavior are covered in `frontend/API_tests/test_ssr_routes.py:19-36`; HTMX login/logout feedback is covered in `frontend/API_tests/test_htmx_feedback.py:23-42`.
+# 5. Test Sufficiency Summary
+## Test Overview
+- unit tests exist: yes, at [repo/frontend/unit_tests](repo/frontend/unit_tests).
+- component tests exist: missing in current frontend test layout.
+- page / route integration tests exist: yes, at [repo/frontend/API_tests](repo/frontend/API_tests).
+- E2E tests exist: cannot confirm runnable E2E coverage; directory [repo/frontend/e2e](repo/frontend/e2e) is present but empty in this review.
+- obvious test entry points: [repo/run_tests.sh](repo/run_tests.sh#L33), [repo/run_tests.sh](repo/run_tests.sh#L36), [repo/frontend/README.md](repo/frontend/README.md#L16), [repo/frontend/README.md](repo/frontend/README.md#L20).
 
-- frontend route protection / route guards
-- Pass
-- brief evidence or verification-boundary explanation
-- Customers are denied privileged pages and authorized roles can open their own workspaces in `frontend/API_tests/test_ssr_routes.py:39-66`.
+## Core Coverage
+- happy path: covered  
+Evidence: login/render/navigation and role-access path tests in [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L19) and [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L51).
+- key failure paths: partial  
+Evidence: descriptive HX error feedback coverage exists in [repo/frontend/API_tests/test_htmx_feedback.py](repo/frontend/API_tests/test_htmx_feedback.py#L45) and [repo/frontend/API_tests/test_htmx_feedback.py](repo/frontend/API_tests/test_htmx_feedback.py#L95); gaps remain for duplicate-click/race behaviors.
+- security-critical coverage: partial  
+Evidence: route and session isolation tests in [repo/frontend/API_tests/test_ssr_routes.py](repo/frontend/API_tests/test_ssr_routes.py#L39) and [repo/frontend/unit_tests/test_session_isolation.py](repo/frontend/unit_tests/test_session_isolation.py#L61); sensitive-info exposure check for login template credentials is not covered by tests.
 
-- page-level / feature-level access control
-- Pass
-- brief evidence or verification-boundary explanation
-- Navigation is role-gated in `backend/app/templates/base.html:22-38`, and page access boundaries are regression-tested in `frontend/API_tests/test_ssr_routes.py:39-66`.
+## Major Gaps
+- Missing E2E browser smoke test for core user journey (login to menu to cart to protected-route checks).
+- Missing component-level tests for complex interactive forms and progressive-enhancement fragments.
+- Missing concurrency/duplicate-submission tests for rapid repeat actions on hx-post forms.
 
-- sensitive information exposure
-- Pass
-- brief evidence or verification-boundary explanation
-- Static review found no secrets embedded in the rendered templates; backend payment API regression also asserts that `encrypted_secret` is not exposed in payment responses in `backend/API_tests/test_payment_api.py:75-77`. Boundary: no browser devtools/console inspection was executed.
-
-- cache / state isolation after switching users
-- Pass
-- brief evidence or verification-boundary explanation
-- Session reset, single-browser user switching, and parallel-session isolation are covered in `frontend/unit_tests/test_session_isolation.py:29-70`.
-
-5. Test Sufficiency Summary
-- Test Overview
-- whether unit tests exist
-- Yes. `frontend/unit_tests/test_session_isolation.py`.
-- whether component tests exist
-- Missing. No separate component-test layer was found; the frontend is SSR template based.
-- whether page / route integration tests exist
-- Yes. `frontend/API_tests/test_ssr_routes.py` and `frontend/API_tests/test_htmx_feedback.py`.
-- whether E2E tests exist
-- Missing. No browser/E2E suite was found under `frontend/`.
-- if they exist, what the obvious test entry points are
-- Route tests: `python -m pytest frontend/API_tests -q`; session tests: `python -m pytest frontend/unit_tests -q`; project-wide: `bash ./run_tests.sh`.
-
-- Core Coverage
-- happy path: partial
-- Evidence: login/logout, menu/cart/community, and several HTMX success states are covered in `frontend/API_tests/test_ssr_routes.py:19-66` and `frontend/API_tests/test_htmx_feedback.py:65-92`; however, the manager configuration flow and refund step-up flow are not fully delivered in the UI.
-- key failure paths: partial
-- Evidence: authentication failure and forbidden-page feedback are covered in `frontend/API_tests/test_htmx_feedback.py:45-62` and `frontend/API_tests/test_htmx_feedback.py:95-103`; missing UI coverage remains for refund step-up failure states and manager-form validation states.
-- security-critical coverage: partial
-- Evidence: route/session isolation is covered in `frontend/API_tests/test_ssr_routes.py:39-66` and `frontend/unit_tests/test_session_isolation.py:42-70`; no browser-level coverage exists for the finance workflows called out in the prompt.
-
-- Major Gaps
-- No frontend test covers interactive manager editing of availability windows, required options, or pricing/add-on rules.
-- No frontend test covers a full refund `pending_stepup` to confirmation flow because the UI does not expose that form.
-- No browser-level test covers payments callback verify/simulator flows or image-upload preview/error behavior.
-
-- Final Test Verdict
+## Final Test Verdict
 - Partial Pass
 
-6. Engineering Quality Summary
-- The frontend architecture is coherent for an SSR/HTMX app: shared shell, role-aware navigation, focused templates, a small enhancement script, and route/session regression tests. It does not look like a random demo fragment.
-- Delivery credibility drops because several acceptance-critical workflows remain API-backed instead of UI-backed. The manager, refund, and payments workspaces are present, but they do not surface the full business flows the prompt requires.
+# 6. Engineering Quality Summary
+- Frontend architecture is coherent for an SSR-first product: templates, static assets, and backend-enforced role boundaries are well integrated.
+- Progressive enhancement and feedback headers are consistently wired, evidenced by [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L77), [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L79), and route feedback tests in [repo/frontend/API_tests/test_htmx_feedback.py](repo/frontend/API_tests/test_htmx_feedback.py#L65).
+- Main credibility reductions are security hygiene (credential exposure) and insufficient high-fidelity UI test layers.
 
-7. Visual and Interaction Summary
-- Visual quality is broadly acceptable. The shell, panels, typography, spacing, and notice system are consistent, and the menu/filter/cart interactions are clearly segmented and progressively enhanced through the SSR shell and HTMX-style script.
-- Evidence: `backend/app/templates/base.html:11-47`; `backend/app/templates/menu/index.html:3-35`; `backend/app/static/js/htmx-lite.js:32-47`; `backend/app/static/js/htmx-lite.js:75-136`.
-- The visual layer is not the main reason for the verdict. The material interaction problem is that key finance and manager workflows stop short of task completion.
+# 7. Visual and Interaction Summary
+- Visual baseline: Pass  
+Evidence: differentiated layout and thematic styling exist (gradient background and layered panels) at [repo/backend/app/static/css/app.css](repo/backend/app/static/css/app.css#L32), [repo/backend/app/static/css/app.css](repo/backend/app/static/css/app.css#L70), [repo/backend/app/static/css/app.css](repo/backend/app/static/css/app.css#L194).
+- Interaction feedback: Pass  
+Evidence: client-side toast and redirect handling at [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L77), [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L79), [repo/backend/app/static/js/htmx-lite.js](repo/backend/app/static/js/htmx-lite.js#L118), validated by [repo/frontend/API_tests/test_htmx_feedback.py](repo/frontend/API_tests/test_htmx_feedback.py#L65).
+- Boundary: Full visual polish and responsiveness were not runtime-verified in browser sessions during this static review.
 
-8. Next Actions
-- Build a real manager editing UI for availability windows, option groups, required rules, and price deltas.
-- Add a refund step-up confirmation form to the finance workspace and align it with the required approval policy.
-- Expose callback verification preview and JSAPI simulator actions in the payments workspace.
-- Fix the README and frontend README paths/commands so reviewers can follow them from the actual repo root.
-- Add browser-level E2E coverage for manager, payments, refund, and image-upload interaction flows.
+# 8. Next Actions
+1. Remove plaintext seeded credentials from login UI outside explicit local-review mode.
+2. Add a minimal E2E suite for one full happy path and one permission-denied path.
+3. Introduce submit-in-flight locking and disabled-state UX for hx-post forms to prevent duplicate requests.
+4. Add component-level tests for high-risk interactive templates and form fragments.
+5. Run documented frontend test commands and attach execution evidence to close Cannot Confirm runtime boundaries.

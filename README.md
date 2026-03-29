@@ -20,6 +20,8 @@ Seeded users:
 - `finance` / `Finance#12345`
 - `moderator` / `Moderator#123`
 
+Seeded credential hints are rendered only when `SHOW_SEEDED_CREDENTIALS=true` is explicitly enabled for local-review mode.
+
 Container startup runs migrations and seeds automatically. The container serves the app through Waitress rather than Flask's development server.
 
 Deterministic container health is exposed through `/healthz` and Docker's built-in `healthcheck`, so reviewers can verify boot state non-interactively with `docker compose ps`.

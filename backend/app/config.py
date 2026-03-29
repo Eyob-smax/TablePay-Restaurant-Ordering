@@ -48,6 +48,7 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = False
     ALLOW_INSECURE_HTTP = False
+    SHOW_SEEDED_CREDENTIALS = False
     LOCKOUT_WINDOW_MINUTES = 15
     LOCKOUT_MAX_ATTEMPTS = 10
     SESSION_TTL_HOURS = 12
@@ -97,6 +98,7 @@ class DevelopmentConfig(Config):
     KEY_ENCRYPTION_SECRET = os.getenv("KEY_ENCRYPTION_SECRET", "dev-local-encryption-secret-change-me")
     SESSION_COOKIE_SECURE = _env_flag("SESSION_COOKIE_SECURE", "false")
     ALLOW_INSECURE_HTTP = _env_flag("ALLOW_INSECURE_HTTP", "true")
+    SHOW_SEEDED_CREDENTIALS = _env_flag("SHOW_SEEDED_CREDENTIALS", "false")
 
 
 class TestConfig(Config):
@@ -107,6 +109,7 @@ class TestConfig(Config):
     KEY_ENCRYPTION_SECRET = "test-encryption-secret-for-tablepay-suite"
     SESSION_COOKIE_SECURE = False
     ALLOW_INSECURE_HTTP = True
+    SHOW_SEEDED_CREDENTIALS = _env_flag("SHOW_SEEDED_CREDENTIALS", "false")
     OPS_MAINTENANCE_ENABLED = False
     NIGHTLY_BACKUP_ENABLED = False
 
@@ -124,6 +127,7 @@ class ProductionConfig(Config):
             "KEY_ENCRYPTION_SECRET": os.getenv("KEY_ENCRYPTION_SECRET"),
             "SESSION_COOKIE_SECURE": _env_flag("SESSION_COOKIE_SECURE", "true"),
             "ALLOW_INSECURE_HTTP": _env_flag("ALLOW_INSECURE_HTTP", "false"),
+            "SHOW_SEEDED_CREDENTIALS": _env_flag("SHOW_SEEDED_CREDENTIALS", "false"),
         }
 
     @classmethod

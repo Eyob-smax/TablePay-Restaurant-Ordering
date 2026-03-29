@@ -29,8 +29,16 @@ body {
   font-family: "Aptos", "Segoe UI", "Trebuchet MS", sans-serif;
   color: var(--ink);
   background:
-    radial-gradient(circle at top left, rgba(236, 165, 118, 0.34), transparent 28rem),
-    radial-gradient(circle at top right, rgba(94, 128, 108, 0.18), transparent 24rem),
+    radial-gradient(
+      circle at top left,
+      rgba(236, 165, 118, 0.34),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(94, 128, 108, 0.18),
+      transparent 24rem
+    ),
     linear-gradient(180deg, #fbf6ef 0%, var(--bg) 46%, var(--bg-deep) 100%);
 }
 
@@ -43,7 +51,8 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1px, transparent 1px);
   background-size: 36px 36px;
   opacity: 0.2;
@@ -145,7 +154,11 @@ button,
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .nav-link {
@@ -165,6 +178,18 @@ button,
 button:hover,
 .button-link:hover {
   transform: translateY(-1px);
+}
+
+button:disabled,
+input[type="submit"]:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+form.is-submitting {
+  opacity: 0.92;
 }
 
 .shell-main {

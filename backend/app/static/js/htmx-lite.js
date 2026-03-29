@@ -72,7 +72,29 @@ function applyCsrfToForms() {
   });
 }
 
-async function handleResponse(response, targetSelector, swapMode, fallbackTarget = null) {
+function setFormPending(form, isPending) {
+  form.dataset.submitting = isPending ? "true" : "false";
+  form.setAttribute("aria-busy", isPending ? "true" : "false");
+  form.classList.toggle("is-submitting", isPending);
+  form.querySelectorAll("button, input[type='submit']").forEach((control) => {
+    if (isPending) {
+      control.dataset.wasDisabled = control.disabled ? "true" : "false";
+      control.disabled = true;
+      return;
+    }
+    if (control.dataset.wasDisabled === "false") {
+      control.disabled = false;
+    }
+    delete control.dataset.wasDisabled;
+  });
+}
+
+async function handleResponse(
+  response,
+  targetSelector,
+  swapMode,
+  fallbackTarget = null,
+) {
   const csrfHeader = response.headers.get("X-CSRF-Token");
   const toastMessage = response.headers.get("X-Toast-Message");
   const toastTone = response.headers.get("X-Toast-Tone") || "success";
@@ -100,7 +122,10 @@ async function handleResponse(response, targetSelector, swapMode, fallbackTarget
     }
   }
 
-  const target = targetSelector === "closest article" ? fallbackTarget : document.querySelector(targetSelector);
+  const target =
+    targetSelector === "closest article"
+      ? fallbackTarget
+      : document.querySelector(targetSelector);
   const payload = await response.text();
 
   if (!response.ok) {
@@ -138,52 +163,70 @@ async function handleResponse(response, targetSelector, swapMode, fallbackTarget
 }
 
 function wireForms() {
-  document.querySelectorAll("form[hx-post], form[hx-patch], form[hx-delete]").forEach((form) => {
-    if (form.dataset.hxBound === "true") {
-      return;
-    }
-    form.dataset.hxBound = "true";
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      applyCsrfToForms();
-      if (form.matches("[data-manager-editor]")) {
-        syncManagerStructuredFields(form);
+  document
+    .querySelectorAll("form[hx-post], form[hx-patch], form[hx-delete]")
+    .forEach((form) => {
+      if (form.dataset.hxBound === "true") {
+        return;
       }
-      const method = form.getAttribute("hx-post")
-        ? "POST"
-        : form.getAttribute("hx-patch")
-          ? "PATCH"
-          : "DELETE";
-      const action = form.getAttribute("hx-post") || form.getAttribute("hx-patch") || form.getAttribute("hx-delete");
-      const autoNoncePurpose = form.dataset.autoNoncePurpose;
-      const nonceInput = form.querySelector('input[name="nonce"]');
-      if (autoNoncePurpose && nonceInput && !nonceInput.value) {
-        try {
-          nonceInput.value = await issueNonce(autoNoncePurpose);
-        } catch (error) {
-          showNotice(error.message || "Unable to issue nonce.", "error");
+      form.dataset.hxBound = "true";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (form.dataset.submitting === "true") {
           return;
         }
-      }
+        setFormPending(form, true);
+        const nonceInput = form.querySelector('input[name="nonce"]');
+        try {
+          applyCsrfToForms();
+          if (form.matches("[data-manager-editor]")) {
+            syncManagerStructuredFields(form);
+          }
+          const method = form.getAttribute("hx-post")
+            ? "POST"
+            : form.getAttribute("hx-patch")
+              ? "PATCH"
+              : "DELETE";
+          const action =
+            form.getAttribute("hx-post") ||
+            form.getAttribute("hx-patch") ||
+            form.getAttribute("hx-delete");
+          const autoNoncePurpose = form.dataset.autoNoncePurpose;
+          if (autoNoncePurpose && nonceInput && !nonceInput.value) {
+            try {
+              nonceInput.value = await issueNonce(autoNoncePurpose);
+            } catch (error) {
+              showNotice(error.message || "Unable to issue nonce.", "error");
+              return;
+            }
+          }
 
-      const response = await fetch(action, {
-        method,
-        body: new FormData(form),
-        credentials: "same-origin",
-        headers: { "HX-Request": "true", "X-CSRF-Token": readCookie("csrf_token") || "" },
+          const response = await fetch(action, {
+            method,
+            body: new FormData(form),
+            credentials: "same-origin",
+            headers: {
+              "HX-Request": "true",
+              "X-CSRF-Token": readCookie("csrf_token") || "",
+            },
+          });
+
+          await handleResponse(
+            response,
+            form.getAttribute("hx-target"),
+            form.getAttribute("hx-swap") || "innerHTML",
+            form.closest("article"),
+          );
+        } catch (error) {
+          showNotice(error.message || "Request failed.", "error");
+        } finally {
+          if (nonceInput) {
+            nonceInput.value = "";
+          }
+          setFormPending(form, false);
+        }
       });
-
-      await handleResponse(
-        response,
-        form.getAttribute("hx-target"),
-        form.getAttribute("hx-swap") || "innerHTML",
-        form.closest("article"),
-      );
-      if (nonceInput) {
-        nonceInput.value = "";
-      }
     });
-  });
 
   document.querySelectorAll("form[hx-get]").forEach((form) => {
     if (form.dataset.hxBound === "true") {
@@ -192,11 +235,14 @@ function wireForms() {
     form.dataset.hxBound = "true";
     const triggerFetch = async () => {
       const params = new URLSearchParams(new FormData(form));
-      const response = await fetch(`${form.getAttribute("hx-get")}?${params.toString()}`, {
-        method: "GET",
-        credentials: "same-origin",
-        headers: { "HX-Request": "true" },
-      });
+      const response = await fetch(
+        `${form.getAttribute("hx-get")}?${params.toString()}`,
+        {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "HX-Request": "true" },
+        },
+      );
       await handleResponse(
         response,
         form.getAttribute("hx-target"),
@@ -235,31 +281,35 @@ function wireForms() {
 }
 
 function wirePreview() {
-  document.querySelectorAll(".image-upload-form input[type='file']").forEach((input) => {
-    if (input.dataset.previewBound === "true") {
-      return;
-    }
-    input.dataset.previewBound = "true";
-    input.addEventListener("change", () => {
-      const [file] = input.files;
-      const preview = input.closest(".image-upload-form").querySelector(".local-preview");
-      preview.innerHTML = "";
-      if (!file) {
+  document
+    .querySelectorAll(".image-upload-form input[type='file']")
+    .forEach((input) => {
+      if (input.dataset.previewBound === "true") {
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const image = document.createElement("img");
-        image.src = reader.result;
-        image.alt = "Preview";
-        image.className = "dish-image";
-        const caption = document.createElement("p");
-        caption.textContent = file.name;
-        preview.append(image, caption);
-      };
-      reader.readAsDataURL(file);
+      input.dataset.previewBound = "true";
+      input.addEventListener("change", () => {
+        const [file] = input.files;
+        const preview = input
+          .closest(".image-upload-form")
+          .querySelector(".local-preview");
+        preview.innerHTML = "";
+        if (!file) {
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const image = document.createElement("img");
+          image.src = reader.result;
+          image.alt = "Preview";
+          image.className = "dish-image";
+          const caption = document.createElement("p");
+          caption.textContent = file.name;
+          preview.append(image, caption);
+        };
+        reader.readAsDataURL(file);
+      });
     });
-  });
 }
 
 function escapeHtml(value) {
@@ -281,7 +331,9 @@ function safeParseJson(value, fallback) {
 function defaultRule(displayType = "single_select") {
   const isSingleSelect = displayType !== "multi_select";
   return {
-    rule_type: isSingleSelect ? "single_select_required" : "bounded_multi_select",
+    rule_type: isSingleSelect
+      ? "single_select_required"
+      : "bounded_multi_select",
     is_required: isSingleSelect,
     min_select: isSingleSelect ? 1 : 0,
     max_select: 1,
@@ -320,7 +372,10 @@ function managerWindowTemplate(windowData = {}) {
     { value: 5, label: "Sat" },
     { value: 6, label: "Sun" },
   ]
-    .map((day) => `<option value="${day.value}"${day.value === selectedDay ? " selected" : ""}>${day.label}</option>`)
+    .map(
+      (day) =>
+        `<option value="${day.value}"${day.value === selectedDay ? " selected" : ""}>${day.label}</option>`,
+    )
     .join("");
 
   return `
@@ -398,8 +453,12 @@ function managerValueTemplate(valueData = {}) {
 }
 
 function managerOptionGroupTemplate(optionData = {}) {
-  const rules = optionData.rules?.length ? optionData.rules : [defaultRule(optionData.display_type)];
-  const values = optionData.values?.length ? optionData.values : [defaultOptionValue()];
+  const rules = optionData.rules?.length
+    ? optionData.rules
+    : [defaultRule(optionData.display_type)];
+  const values = optionData.values?.length
+    ? optionData.values
+    : [defaultOptionValue()];
 
   return `
     <article class="structured-block manager-option-group">
@@ -456,36 +515,78 @@ function renderManagerStructuredBlocks(form, payload = {}) {
     ? windows.map((windowData) => managerWindowTemplate(windowData)).join("")
     : '<p class="muted">No windows configured. The dish stays available all day.</p>';
   optionList.innerHTML = options.length
-    ? options.map((optionData) => managerOptionGroupTemplate(optionData)).join("")
+    ? options
+        .map((optionData) => managerOptionGroupTemplate(optionData))
+        .join("")
     : '<p class="muted">No option groups configured yet.</p>';
 }
 
 function syncManagerStructuredFields(form) {
-  const availabilityInput = form.querySelector('input[name="availability_windows"]');
+  const availabilityInput = form.querySelector(
+    'input[name="availability_windows"]',
+  );
   const optionsInput = form.querySelector('input[name="options"]');
-  const windows = Array.from(form.querySelectorAll(".manager-window")).map((windowBlock) => ({
-    day_of_week: Number.parseInt(windowBlock.querySelector('[data-window-field="day_of_week"]').value || "0", 10),
-    start_time: windowBlock.querySelector('[data-window-field="start_time"]').value,
-    end_time: windowBlock.querySelector('[data-window-field="end_time"]').value,
-    is_enabled: windowBlock.querySelector('[data-window-field="is_enabled"]').checked,
-  }));
-  const options = Array.from(form.querySelectorAll(".manager-option-group")).map((groupBlock) => ({
+  const windows = Array.from(form.querySelectorAll(".manager-window")).map(
+    (windowBlock) => ({
+      day_of_week: Number.parseInt(
+        windowBlock.querySelector('[data-window-field="day_of_week"]').value ||
+          "0",
+        10,
+      ),
+      start_time: windowBlock.querySelector('[data-window-field="start_time"]')
+        .value,
+      end_time: windowBlock.querySelector('[data-window-field="end_time"]')
+        .value,
+      is_enabled: windowBlock.querySelector('[data-window-field="is_enabled"]')
+        .checked,
+    }),
+  );
+  const options = Array.from(
+    form.querySelectorAll(".manager-option-group"),
+  ).map((groupBlock) => ({
     name: groupBlock.querySelector('[data-option-field="name"]').value,
     code: groupBlock.querySelector('[data-option-field="code"]').value,
-    display_type: groupBlock.querySelector('[data-option-field="display_type"]').value,
-    sort_order: Number.parseInt(groupBlock.querySelector('[data-option-field="sort_order"]').value || "0", 10),
-    rules: Array.from(groupBlock.querySelectorAll(".manager-option-rule")).map((ruleBlock) => ({
-      rule_type: ruleBlock.querySelector('[data-rule-field="rule_type"]').value,
-      is_required: ruleBlock.querySelector('[data-rule-field="is_required"]').checked,
-      min_select: Number.parseInt(ruleBlock.querySelector('[data-rule-field="min_select"]').value || "0", 10),
-      max_select: Number.parseInt(ruleBlock.querySelector('[data-rule-field="max_select"]').value || "1", 10),
-    })),
-    values: Array.from(groupBlock.querySelectorAll(".manager-option-value")).map((valueBlock) => ({
+    display_type: groupBlock.querySelector('[data-option-field="display_type"]')
+      .value,
+    sort_order: Number.parseInt(
+      groupBlock.querySelector('[data-option-field="sort_order"]').value || "0",
+      10,
+    ),
+    rules: Array.from(groupBlock.querySelectorAll(".manager-option-rule")).map(
+      (ruleBlock) => ({
+        rule_type: ruleBlock.querySelector('[data-rule-field="rule_type"]')
+          .value,
+        is_required: ruleBlock.querySelector('[data-rule-field="is_required"]')
+          .checked,
+        min_select: Number.parseInt(
+          ruleBlock.querySelector('[data-rule-field="min_select"]').value ||
+            "0",
+          10,
+        ),
+        max_select: Number.parseInt(
+          ruleBlock.querySelector('[data-rule-field="max_select"]').value ||
+            "1",
+          10,
+        ),
+      }),
+    ),
+    values: Array.from(
+      groupBlock.querySelectorAll(".manager-option-value"),
+    ).map((valueBlock) => ({
       label: valueBlock.querySelector('[data-value-field="label"]').value,
-      value_code: valueBlock.querySelector('[data-value-field="value_code"]').value,
-      price_delta: valueBlock.querySelector('[data-value-field="price_delta"]').value || "0.00",
-      is_available: valueBlock.querySelector('[data-value-field="is_available"]').checked,
-      sort_order: Number.parseInt(valueBlock.querySelector('[data-value-field="sort_order"]').value || "0", 10),
+      value_code: valueBlock.querySelector('[data-value-field="value_code"]')
+        .value,
+      price_delta:
+        valueBlock.querySelector('[data-value-field="price_delta"]').value ||
+        "0.00",
+      is_available: valueBlock.querySelector(
+        '[data-value-field="is_available"]',
+      ).checked,
+      sort_order: Number.parseInt(
+        valueBlock.querySelector('[data-value-field="sort_order"]').value ||
+          "0",
+        10,
+      ),
     })),
   }));
 
@@ -501,30 +602,49 @@ function resetManagerEditor(form) {
   form.setAttribute("hx-post", createUrl);
   form.removeAttribute("hx-patch");
   form.querySelector("[data-editor-mode]").textContent = "Creating a new dish";
-  form.querySelector("[data-editor-title]").textContent = "Structured dish editor";
+  form.querySelector("[data-editor-title]").textContent =
+    "Structured dish editor";
   form.querySelector("[data-editor-submit]").textContent = "Create dish";
-  renderManagerStructuredBlocks(form, { availability_windows: [], options: [] });
+  renderManagerStructuredBlocks(form, {
+    availability_windows: [],
+    options: [],
+  });
   syncManagerStructuredFields(form);
 }
 
 function loadDishIntoManagerEditor(form, payload) {
-  const updateUrl = form.dataset.updateUrlTemplate.replace("__dish_id__", payload.id);
+  const updateUrl = form.dataset.updateUrlTemplate.replace(
+    "__dish_id__",
+    payload.id,
+  );
   form.dataset.editingDishId = payload.id;
   form.querySelector('[name="name"]').value = payload.name || "";
   form.querySelector('[name="description"]').value = payload.description || "";
   form.querySelector('[name="category_name"]').value = payload.category || "";
   form.querySelector('[name="base_price"]').value = payload.base_price || "";
   form.querySelector('[name="tags"]').value = (payload.tags || []).join(", ");
-  form.querySelector('[name="stock_quantity"]').value = String(payload.stock_quantity ?? 0);
-  form.querySelector('[name="sort_order"]').value = String(payload.sort_order ?? 0);
-  form.querySelector('[name="is_published"]').checked = Boolean(payload.is_published);
-  form.querySelector('[name="is_sold_out"]').checked = Boolean(payload.is_sold_out);
-  form.querySelector('[name="archived"]').checked = Boolean(payload.archived_at);
+  form.querySelector('[name="stock_quantity"]').value = String(
+    payload.stock_quantity ?? 0,
+  );
+  form.querySelector('[name="sort_order"]').value = String(
+    payload.sort_order ?? 0,
+  );
+  form.querySelector('[name="is_published"]').checked = Boolean(
+    payload.is_published,
+  );
+  form.querySelector('[name="is_sold_out"]').checked = Boolean(
+    payload.is_sold_out,
+  );
+  form.querySelector('[name="archived"]').checked = Boolean(
+    payload.archived_at,
+  );
   form.setAttribute("action", updateUrl);
   form.removeAttribute("hx-post");
   form.setAttribute("hx-patch", updateUrl);
-  form.querySelector("[data-editor-mode]").textContent = `Editing ${payload.name}`;
-  form.querySelector("[data-editor-title]").textContent = "Update live dish configuration";
+  form.querySelector("[data-editor-mode]").textContent =
+    `Editing ${payload.name}`;
+  form.querySelector("[data-editor-title]").textContent =
+    "Update live dish configuration";
   form.querySelector("[data-editor-submit]").textContent = "Save changes";
   renderManagerStructuredBlocks(form, payload);
   syncManagerStructuredFields(form);
@@ -558,7 +678,10 @@ function wireManagerEditor() {
           if (!form.querySelector(".manager-window")) {
             renderManagerStructuredBlocks(form, {
               availability_windows: [],
-              options: safeParseJson(form.querySelector('input[name="options"]').value, []),
+              options: safeParseJson(
+                form.querySelector('input[name="options"]').value,
+                [],
+              ),
             });
           }
           return;
@@ -569,7 +692,10 @@ function wireManagerEditor() {
           if (optionList.querySelector(".muted")) {
             optionList.innerHTML = "";
           }
-          optionList.insertAdjacentHTML("beforeend", managerOptionGroupTemplate(defaultOptionGroup()));
+          optionList.insertAdjacentHTML(
+            "beforeend",
+            managerOptionGroupTemplate(defaultOptionGroup()),
+          );
           syncManagerStructuredFields(form);
           return;
         }
@@ -579,7 +705,10 @@ function wireManagerEditor() {
           syncManagerStructuredFields(form);
           if (!form.querySelector(".manager-option-group")) {
             renderManagerStructuredBlocks(form, {
-              availability_windows: safeParseJson(form.querySelector('input[name="availability_windows"]').value, []),
+              availability_windows: safeParseJson(
+                form.querySelector('input[name="availability_windows"]').value,
+                [],
+              ),
               options: [],
             });
           }
@@ -588,8 +717,15 @@ function wireManagerEditor() {
         if (event.target.matches("[data-add-rule]")) {
           event.preventDefault();
           const group = event.target.closest(".manager-option-group");
-          const displayType = group.querySelector('[data-option-field="display_type"]').value;
-          group.querySelector("[data-rule-list]").insertAdjacentHTML("beforeend", managerRuleTemplate(defaultRule(displayType)));
+          const displayType = group.querySelector(
+            '[data-option-field="display_type"]',
+          ).value;
+          group
+            .querySelector("[data-rule-list]")
+            .insertAdjacentHTML(
+              "beforeend",
+              managerRuleTemplate(defaultRule(displayType)),
+            );
           syncManagerStructuredFields(form);
           return;
         }
@@ -601,7 +737,13 @@ function wireManagerEditor() {
         }
         if (event.target.matches("[data-add-value]")) {
           event.preventDefault();
-          event.target.closest(".manager-option-group").querySelector("[data-value-list]").insertAdjacentHTML("beforeend", managerValueTemplate(defaultOptionValue()));
+          event.target
+            .closest(".manager-option-group")
+            .querySelector("[data-value-list]")
+            .insertAdjacentHTML(
+              "beforeend",
+              managerValueTemplate(defaultOptionValue()),
+            );
           syncManagerStructuredFields(form);
           return;
         }
