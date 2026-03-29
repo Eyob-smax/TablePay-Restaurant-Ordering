@@ -95,3 +95,33 @@ def test_duplicate_callback_handling_within_and_beyond_window(app):
 
         assert first["data"]["callback_id"] == second["data"]["callback_id"]
         assert third["data"]["callback_id"] != first["data"]["callback_id"]
+
+
+def test_jsapi_simulator_generates_and_imports_callback(app):
+    order = _create_order(app)
+    with app.app_context():
+        payment_service = PaymentService(PaymentRepository())
+        payment = payment_service.capture_payment(
+            {
+                "order_id": order.id,
+                "transaction_reference": "pay-sim-unit-1",
+                "capture_amount": "10.25",
+                "status": "pending",
+            },
+            ["Finance Admin"],
+        )
+
+        result = payment_service.simulate_jsapi_callback(
+            {
+                "transaction_reference": payment.transaction_reference,
+                "status": "success",
+                "key_id": "simulator-v1",
+            },
+            ["Finance Admin"],
+        )
+
+        assert result["import_result"]["code"] == "ok"
+        assert result["package"]["key_id"] == "simulator-v1"
+        refreshed = PaymentRepository().get_transaction(payment.id)
+        assert refreshed.status == "success"
+        assert len(refreshed.callbacks) >= 1

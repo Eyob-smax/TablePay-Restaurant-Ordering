@@ -74,6 +74,47 @@ def test_reconciliation_import_and_list_runs(client, app):
     assert any(run["id"] == run_id for run in list_response.json["data"])
 
 
+def test_reconciliation_async_import_uses_job_queue(client, app):
+    finance_csrf = login(client, "finance", "Finance#12345")
+    with app.app_context():
+        order_id = db.session.execute(db.text("select id from orders limit 1")).scalar()
+    client.post(
+        "/api/payments/capture",
+        json={
+            "order_id": order_id,
+            "transaction_reference": "api-recon-async-1",
+            "capture_amount": "10.25",
+            "status": "success",
+        },
+        headers={"X-CSRF-Token": finance_csrf, "Accept": "application/json"},
+    )
+
+    enqueue_response = client.post(
+        "/api/finance/reconciliation/import/async",
+        json={
+            "source_name": "terminal_csv",
+            "statement_csv": "transaction_reference,amount,currency,status\napi-recon-async-1,10.25,USD,success\n",
+            "filename": "async-terminal.csv",
+        },
+        headers={"X-CSRF-Token": finance_csrf, "Accept": "application/json"},
+    )
+    assert enqueue_response.status_code == 202
+    job_id = enqueue_response.json["data"]["job_id"]
+
+    process_response = client.post(
+        "/api/admin/ops/jobs/process",
+        json={"count": 1},
+        headers={"X-CSRF-Token": finance_csrf, "Accept": "application/json"},
+    )
+    assert process_response.status_code == 200
+    assert process_response.json["data"][0]["id"] == job_id
+    assert process_response.json["data"][0]["status"] == "completed"
+
+    list_response = client.get("/api/finance/reconciliation/runs", headers={"Accept": "application/json"})
+    assert list_response.status_code == 200
+    assert any(run["source_name"] == "terminal_csv" and run["exception_count"] == 0 for run in list_response.json["data"])
+
+
 def test_reconciliation_resolution_flow(client, app):
     finance_csrf = login(client, "finance", "Finance#12345")
     with app.app_context():

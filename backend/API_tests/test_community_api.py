@@ -42,3 +42,30 @@ def test_block_and_unblock_behavior(client, app):
     assert block.status_code == 201
     unblock = client.delete(f"/api/community/blocks/{moderator.id}", headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"})
     assert unblock.status_code == 200
+
+
+def test_unblock_rejects_cross_user_block_access(app):
+    customer_client = app.test_client()
+    manager_client = app.test_client()
+
+    customer_csrf = login(customer_client, "customer", "Customer#1234")
+    manager_csrf = login(manager_client, "manager", "Manager#12345")
+
+    from app.repositories.auth_repository import AuthRepository
+
+    with app.app_context():
+        moderator = AuthRepository().get_user_by_username("moderator")
+
+    block = customer_client.post(
+        "/api/community/blocks",
+        json={"blocked_user_id": moderator.id},
+        headers={"X-CSRF-Token": customer_csrf, "Accept": "application/json"},
+    )
+    assert block.status_code == 201
+
+    denied = manager_client.delete(
+        f"/api/community/blocks/{moderator.id}",
+        headers={"X-CSRF-Token": manager_csrf, "Accept": "application/json"},
+    )
+    assert denied.status_code == 404
+    assert denied.json["code"] == "not_found"

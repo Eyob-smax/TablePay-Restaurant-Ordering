@@ -87,3 +87,30 @@ def test_checkout_creates_order_and_get_order(client, app):
     assert order_response.status_code == 200
     assert order_response.json["data"]["id"] == order_id
     assert order_response.json["data"]["submitted_at"].endswith("Z")
+
+
+def test_order_access_isolated_between_users(app):
+    customer_client = app.test_client()
+    manager_client = app.test_client()
+
+    customer_csrf = login(customer_client, "customer", "Customer#1234")
+    with app.app_context():
+        dish = CatalogRepository().get_dish_by_slug("citrus-tofu-bowl")
+
+    customer_client.post(
+        "/api/cart/items",
+        json={"dish_id": dish.id, "quantity": 1, "selected_options": {}},
+        headers={"X-CSRF-Token": customer_csrf, "Accept": "application/json"},
+    )
+    checkout_response = customer_client.post(
+        "/api/orders/checkout",
+        json={"checkout_key": "api-order-cross-user"},
+        headers={"X-CSRF-Token": customer_csrf, "Accept": "application/json"},
+    )
+    order_id = checkout_response.json["data"]["id"]
+
+    login(manager_client, "manager", "Manager#12345")
+    denied = manager_client.get(f"/api/orders/{order_id}", headers={"Accept": "application/json"})
+
+    assert denied.status_code == 404
+    assert denied.json["code"] == "not_found"

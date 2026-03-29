@@ -135,3 +135,37 @@ def test_image_validation_rejects_large_file(client, app):
 
     assert response.status_code == 400
     assert response.json["code"] == "invalid_image_size"
+
+
+def test_manager_bulk_update_queues_and_applies_changes(app):
+    manager_client = app.test_client()
+    finance_client = app.test_client()
+
+    _response, manager_csrf = login(manager_client, "manager", "Manager#12345")
+    _response, finance_csrf = login(finance_client, "finance", "Finance#12345")
+
+    from app.repositories.catalog_repository import CatalogRepository
+
+    with app.app_context():
+        dish = CatalogRepository().get_dish_by_slug("signature-beef-noodles")
+
+    queue_response = manager_client.post(
+        "/api/manager/dishes/bulk-update",
+        json={"dish_ids": [dish.id], "publish": False, "archived": True},
+        headers={"X-CSRF-Token": manager_csrf, "Accept": "application/json"},
+    )
+    assert queue_response.status_code == 202
+
+    process_response = finance_client.post(
+        "/api/admin/ops/jobs/process",
+        json={"count": 1},
+        headers={"X-CSRF-Token": finance_csrf, "Accept": "application/json"},
+    )
+    assert process_response.status_code == 200
+    assert process_response.json["data"][0]["job_type"] == "bulk_menu_update"
+    assert process_response.json["data"][0]["status"] == "completed"
+
+    with app.app_context():
+        refreshed = CatalogRepository().get_dish(dish.id)
+        assert refreshed.is_published is False
+        assert refreshed.archived_at is not None

@@ -137,6 +137,33 @@ class ReconciliationService:
         )
         return run
 
+    def enqueue_import_csv(
+        self,
+        csv_text: str,
+        source_name: str,
+        imported_filename: str,
+        operator_user_id: str,
+        current_roles: list[str],
+    ):
+        self.rbac.require_roles(current_roles, ["Finance Admin"])
+        if not (csv_text or "").strip():
+            raise AppError("validation_error", "statement_csv is required.", 400)
+
+        from app.repositories.ops_repository import OpsRepository
+        from app.services.ops_service import OpsService
+
+        job = OpsService(OpsRepository()).enqueue_job(
+            "reconciliation_import",
+            {
+                "csv_text": csv_text,
+                "source_name": source_name or "terminal_csv",
+                "imported_filename": imported_filename or "",
+                "operator_user_id": operator_user_id,
+            },
+        )
+        logger.info("reconciliation.run_queued", job_id=job.id, source_name=source_name)
+        return job
+
     def list_runs(self, current_roles: list[str]):
         self.rbac.require_roles(current_roles, ["Finance Admin"])
         return self.repository.list_runs()

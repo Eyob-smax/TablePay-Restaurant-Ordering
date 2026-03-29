@@ -40,13 +40,17 @@ The script creates `.pytest-venv` inside `fullstack`, installs backend dependenc
 
 - Auth: bcrypt passwords, password policy, failed-attempt lockout, session cookies, CSRF tokens, RBAC, and anti-replay nonces.
 - Catalog: categories, tags, availability windows, sold-out handling, required option groups, manager publish/archive/edit controls, and validated image uploads.
+- Catalog async ops: queue-backed bulk menu update jobs for publish/archive changes.
 - Ordering: carts, cart items, checkout idempotency, pricing breakdown persistence, inventory reservations, and SQLite-safe concurrency control.
 - Payments: offline capture, signed callback import/verify, encrypted rotating keys, and 24-hour deduplication by transaction reference.
+- Payments simulator: JSAPI callback simulation endpoint that signs and imports callbacks through the same verification pipeline.
 - Reconciliation: CSV import, row normalization, variance detection, exception queues, and operator resolution actions.
+- Reconciliation async ops: optional queued import processing backed by the ops job worker.
 - Refunds: partial and multiple refunds, original-route enforcement, cumulative cap checks, risk events, and password step-up.
 - Community: likes, favorites, comments, reports, user blocks, cooldowns, and throttling controls.
 - Moderation and governance: moderator queue, reason-coded outcomes, item history, nonce-protected role changes, and audit events.
 - Operations: job tables, menu cache, per-user rate limiting, circuit breakers, structured logs, encrypted local backups, restore testing, and retention pruning.
+- Operations automation: nightly scheduler tick creates one encrypted backup per UTC day and processes queued jobs with bounded throughput.
 - Frontend delivery: integrated SSR templates/static assets with HTMX-style progressive enhancement, descriptive toast feedback, and dedicated frontend route regression tests.
 - Frontend test depth: route tests plus frontend session-isolation/unit regression tests, all runnable through `./run_tests.sh`.
 

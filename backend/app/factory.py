@@ -69,6 +69,11 @@ def create_app(config_name: str | None = None) -> Flask:
             endpoint=request.path,
         )
         ops_service = OpsService(OpsRepository())
+        if app.config.get("OPS_MAINTENANCE_ENABLED", True):
+            try:
+                ops_service.run_maintenance_tick()
+            except Exception as exc:  # pragma: no cover - best effort maintenance
+                logger.warning("ops.maintenance_tick_failed", error=str(exc))
         actor_key = getattr(current_user, "id", None) or g.client_id
         ops_service.enforce_rate_limit(actor_key)
         ops_service.before_endpoint(request.path)

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from flask import g, jsonify
+from flask import g, jsonify, request
 
 from app.repositories.ops_repository import OpsRepository
 from app.services.errors import AppError
 from app.services.ops_service import OpsService
 from app.services.rbac_service import RBACService
+from app.services.time_utils import serialize_utc_datetime
 
 
 def _service():
@@ -21,7 +22,52 @@ def _require_admin():
 def list_jobs():
     _require_admin()
     jobs = _service().list_jobs()
-    return jsonify({"code": "ok", "message": "Jobs fetched.", "data": [{"id": job.id, "job_type": job.job_type, "status": job.status, "attempts": job.attempts} for job in jobs]})
+    return jsonify(
+        {
+            "code": "ok",
+            "message": "Jobs fetched.",
+            "data": [
+                {
+                    "id": job.id,
+                    "job_type": job.job_type,
+                    "status": job.status,
+                    "attempts": job.attempts,
+                    "available_at": serialize_utc_datetime(job.available_at),
+                    "last_error": job.last_error,
+                }
+                for job in jobs
+            ],
+        }
+    )
+
+
+def process_jobs():
+    _require_admin()
+    payload = request.get_json(silent=True) or request.form
+    raw_count = payload.get("count") if payload else None
+    if raw_count is None:
+        raw_count = request.args.get("count", "1")
+    try:
+        count = int(raw_count)
+    except (TypeError, ValueError) as exc:
+        raise AppError("validation_error", "count must be an integer.", 400) from exc
+    jobs = _service().process_jobs(count)
+    return jsonify(
+        {
+            "code": "ok",
+            "message": "Job processing complete.",
+            "data": [
+                {
+                    "id": job.id,
+                    "job_type": job.job_type,
+                    "status": job.status,
+                    "attempts": job.attempts,
+                    "last_error": job.last_error,
+                }
+                for job in jobs
+            ],
+        }
+    )
 
 
 def list_rate_limits():

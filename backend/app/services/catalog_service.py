@@ -90,6 +90,63 @@ class CatalogService:
         logger.info("catalog.dish_publish_changed", dish_id=dish.id, publish=publish)
         return dish
 
+    def queue_bulk_update(
+        self,
+        dish_ids: list[str],
+        publish: bool | None,
+        archived: bool | None,
+        operator_user_id: str,
+        current_roles: list[str],
+    ):
+        self.rbac.require_roles(current_roles, ["Store Manager"])
+        normalized_ids = [str(dish_id).strip() for dish_id in dish_ids if str(dish_id).strip()]
+        if not normalized_ids:
+            raise AppError("validation_error", "At least one dish_id is required.", 400)
+        if publish is None and archived is None:
+            raise AppError("validation_error", "Either publish or archived must be provided.", 400)
+
+        from app.repositories.ops_repository import OpsRepository
+        from app.services.ops_service import OpsService
+
+        job = OpsService(OpsRepository()).enqueue_job(
+            "bulk_menu_update",
+            {
+                "dish_ids": normalized_ids,
+                "publish": publish,
+                "archived": archived,
+                "operator_user_id": operator_user_id,
+            },
+        )
+        logger.info("catalog.bulk_update_queued", job_id=job.id, dish_count=len(normalized_ids))
+        return job
+
+    def apply_bulk_update(self, dish_ids: list[str], publish: bool | None, archived: bool | None) -> dict:
+        normalized_ids = [str(dish_id).strip() for dish_id in dish_ids if str(dish_id).strip()]
+        if not normalized_ids:
+            raise AppError("validation_error", "At least one dish_id is required.", 400)
+        if publish is None and archived is None:
+            raise AppError("validation_error", "Either publish or archived must be provided.", 400)
+
+        missing_ids: list[str] = []
+        updated_count = 0
+        archive_timestamp = utc_now_naive()
+        for dish_id in normalized_ids:
+            dish = self.repository.get_dish(dish_id)
+            if dish is None:
+                missing_ids.append(dish_id)
+                continue
+            if publish is not None:
+                dish.is_published = bool(publish)
+            if archived is not None:
+                dish.archived_at = archive_timestamp if bool(archived) else None
+            db.session.add(dish)
+            updated_count += 1
+
+        MenuCache.clear()
+        db.session.flush()
+        logger.info("catalog.bulk_update_applied", updated_count=updated_count, missing_count=len(missing_ids))
+        return {"updated_count": updated_count, "missing_ids": missing_ids}
+
     def upload_image(
         self,
         dish_id: str,

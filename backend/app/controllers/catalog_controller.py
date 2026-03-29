@@ -7,6 +7,7 @@ from flask import current_app, g, jsonify, render_template, request, send_from_d
 from app.controllers.ui_helpers import attach_feedback, redirect_anonymous_to_login
 from app.repositories.catalog_repository import CatalogRepository
 from app.services.catalog_service import CatalogService
+from app.services.errors import AppError
 from app.services.rbac_service import RBACService
 
 
@@ -157,6 +158,42 @@ def publish_dish(dish_id: str):
     return jsonify({"code": "ok", "message": "Publish state updated.", "data": _serialize_dish(dish)})
 
 
+def bulk_update_dishes():
+    if g.current_user is None:
+        raise AppError("authentication_required", "Authentication is required.", 401)
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        dish_ids = payload.get("dish_ids") or []
+    else:
+        payload = request.form
+        dish_ids = payload.getlist("dish_ids")
+        if not dish_ids:
+            dish_ids = [item.strip() for item in payload.get("dish_ids", "").split(",") if item.strip()]
+
+    if isinstance(dish_ids, str):
+        dish_ids = [item.strip() for item in dish_ids.split(",") if item.strip()]
+    publish = _coerce_optional_bool(payload.get("publish"))
+    archived = _coerce_optional_bool(payload.get("archived"))
+
+    job = CatalogService(CatalogRepository()).queue_bulk_update(
+        dish_ids=dish_ids,
+        publish=publish,
+        archived=archived,
+        operator_user_id=g.current_user.id,
+        current_roles=g.current_roles,
+    )
+    return (
+        jsonify(
+            {
+                "code": "accepted",
+                "message": "Bulk menu update queued.",
+                "data": {"job_id": job.id, "status": job.status},
+            }
+        ),
+        202,
+    )
+
+
 def upload_dish_image(dish_id: str):
     image = request.files.get("image")
     dish_image = CatalogService(CatalogRepository()).upload_image(
@@ -215,3 +252,16 @@ def _inflate_payload(payload: dict) -> dict:
 
         payload["options"] = json.loads(payload["options"] or "[]")
     return payload
+
+
+def _coerce_optional_bool(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise AppError("validation_error", "Boolean fields must be true or false.", 400)

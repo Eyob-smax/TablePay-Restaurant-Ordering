@@ -67,6 +67,10 @@ class OpsRepository:
         stmt = select(BackupJob).order_by(BackupJob.created_at.desc())
         return list(db.session.scalars(stmt))
 
+    def latest_backup_job(self) -> BackupJob | None:
+        stmt = select(BackupJob).order_by(BackupJob.created_at.desc())
+        return db.session.scalar(stmt)
+
     def create_restore_run(self, **kwargs) -> RestoreRun:
         run = RestoreRun(**kwargs)
         db.session.add(run)

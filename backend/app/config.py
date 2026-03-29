@@ -63,6 +63,10 @@ class Config:
     CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
     CIRCUIT_BREAKER_WINDOW_SECONDS = 60
     CIRCUIT_BREAKER_RESET_SECONDS = 120
+    OPS_MAINTENANCE_ENABLED = True
+    OPS_JOB_PROCESS_LIMIT_PER_TICK = 3
+    NIGHTLY_BACKUP_ENABLED = True
+    NIGHTLY_BACKUP_HOUR_UTC = 2
     BACKUP_RETENTION_DAYS = 14
 
     @staticmethod
@@ -103,6 +107,8 @@ class TestConfig(Config):
     KEY_ENCRYPTION_SECRET = "test-encryption-secret-for-tablepay-suite"
     SESSION_COOKIE_SECURE = False
     ALLOW_INSECURE_HTTP = True
+    OPS_MAINTENANCE_ENABLED = False
+    NIGHTLY_BACKUP_ENABLED = False
 
 
 class ProductionConfig(Config):

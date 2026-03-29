@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -46,21 +45,22 @@ class OpsService:
         self.repository = repository
         self.security = PaymentSecurity(PaymentSecurity.derive_fernet_key(current_app.config["KEY_ENCRYPTION_SECRET"]))
 
-    def enqueue_job(self, job_type: str, payload: dict):
+    def enqueue_job(self, job_type: str, payload: dict, available_at: datetime | None = None):
         job = self.repository.create_job(
             job_type=job_type,
             payload_json=json.dumps(payload),
             status="queued",
             attempts=0,
             max_attempts=3,
-            available_at=utc_now_naive(),
+            available_at=available_at or utc_now_naive(),
             last_error="",
         )
         db.session.commit()
         return job
 
     def process_next_job(self):
-        job = self.repository.next_available_job(utc_now_naive())
+        started_at = utc_now_naive()
+        job = self.repository.next_available_job(started_at)
         if job is None:
             return None
         job.status = "running"
@@ -69,27 +69,56 @@ class OpsService:
         run = self.repository.add_job_run(
             job_id=job.id,
             status="running",
-            started_at=utc_now_naive(),
+            started_at=started_at,
             finished_at=None,
             details_json=job.payload_json,
         )
         try:
-            payload = json.loads(job.payload_json)
-            if job.job_type not in {"reconciliation_import", "bulk_menu_publish"}:
-                raise AppError("job_unsupported", "Unsupported job type.", 400)
+            payload = json.loads(job.payload_json or "{}")
+            result = self._execute_job(job.job_type, payload)
             job.status = "completed"
+            job.last_error = ""
             run.status = "completed"
             run.finished_at = utc_now_naive()
+            run.details_json = json.dumps({"payload": payload, "result": result})
+            logger.info("ops.job_completed", job_id=job.id, job_type=job.job_type)
         except Exception as exc:
             job.last_error = str(exc)
             job.status = "dead_letter" if job.attempts >= job.max_attempts else "queued"
             job.available_at = utc_now_naive() + timedelta(seconds=30)
             run.status = "failed"
             run.finished_at = utc_now_naive()
+            run.details_json = json.dumps({"payload": job.payload_json, "error": str(exc)})
+            logger.warning(
+                "ops.job_failed",
+                job_id=job.id,
+                job_type=job.job_type,
+                attempts=job.attempts,
+                status=job.status,
+            )
         db.session.add(job)
         db.session.add(run)
         db.session.commit()
         return job
+
+    def process_jobs(self, limit: int = 1):
+        normalized_limit = max(1, min(int(limit), 50))
+        processed = []
+        for _ in range(normalized_limit):
+            job = self.process_next_job()
+            if job is None:
+                break
+            processed.append(job)
+        return processed
+
+    def run_maintenance_tick(self, now: datetime | None = None):
+        reference_time = now or utc_now_naive()
+        backup_job = self._run_nightly_backup_if_due(reference_time)
+        processed_jobs = self.process_jobs(current_app.config["OPS_JOB_PROCESS_LIMIT_PER_TICK"])
+        return {
+            "backup_job_id": backup_job.id if backup_job else None,
+            "processed_job_ids": [job.id for job in processed_jobs],
+        }
 
     def enforce_rate_limit(self, actor_key: str):
         now = utc_now_naive()
@@ -150,23 +179,25 @@ class OpsService:
     def list_breakers(self):
         return self.repository.list_breakers()
 
-    def run_backup(self):
+    def run_backup(self, trigger: str = "manual", now: datetime | None = None):
+        reference_time = now or utc_now_naive()
         database_uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
         db_path = Path(database_uri.removeprefix("sqlite:///"))
         backup_dir = Path(current_app.config["BACKUP_DIR"])
         backup_dir.mkdir(parents=True, exist_ok=True)
-        backup_name = f"tablepay-backup-{utc_now_naive().strftime('%Y%m%d%H%M%S')}.bin"
+        backup_name = f"tablepay-backup-{reference_time.strftime('%Y%m%d%H%M%S')}.bin"
         backup_path = backup_dir / backup_name
         encrypted = self.security.encrypt_secret(db_path.read_bytes().decode("latin1"))
         backup_path.write_text(encrypted, encoding="utf-8")
         job = self.repository.create_backup_job(
             status="completed",
             file_path=str(backup_path),
-            retention_until=utc_now_naive() + timedelta(days=current_app.config["BACKUP_RETENTION_DAYS"]),
-            details_json=json.dumps({"source": str(db_path)}),
+            retention_until=reference_time + timedelta(days=current_app.config["BACKUP_RETENTION_DAYS"]),
+            details_json=json.dumps({"source": str(db_path), "trigger": trigger}),
         )
-        self._prune_backups()
+        self._prune_backups(reference_time)
         db.session.commit()
+        logger.info("ops.backup_completed", backup_job_id=job.id, trigger=trigger)
         return job
 
     def restore_test(self):
@@ -188,9 +219,55 @@ class OpsService:
         db.session.commit()
         return run
 
-    def _prune_backups(self):
+    def _prune_backups(self, now: datetime | None = None):
+        reference_time = now or utc_now_naive()
         for backup in self.repository.list_backup_jobs():
-            if backup.retention_until < utc_now_naive():
+            if backup.retention_until < reference_time:
                 path = Path(backup.file_path)
                 if path.exists():
                     path.unlink()
+
+    def _run_nightly_backup_if_due(self, now: datetime):
+        if not current_app.config.get("NIGHTLY_BACKUP_ENABLED", False):
+            return None
+        database_uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
+        if database_uri.endswith(":memory:"):
+            return None
+        if now.hour < int(current_app.config["NIGHTLY_BACKUP_HOUR_UTC"]):
+            return None
+        latest = self.repository.latest_backup_job()
+        if latest is not None and latest.created_at.date() == now.date():
+            return None
+        return self.run_backup(trigger="nightly_scheduler", now=now)
+
+    def _execute_job(self, job_type: str, payload: dict):
+        normalized_type = (job_type or "").strip().lower()
+        if normalized_type == "reconciliation_import":
+            from app.repositories.reconciliation_repository import ReconciliationRepository
+            from app.services.reconciliation_service import ReconciliationService
+
+            csv_text = payload.get("csv_text") or ""
+            operator_user_id = (payload.get("operator_user_id") or "").strip()
+            if not csv_text or not operator_user_id:
+                raise AppError("validation_error", "Reconciliation job payload is incomplete.", 400)
+            run = ReconciliationService(ReconciliationRepository()).import_csv(
+                csv_text=csv_text,
+                source_name=(payload.get("source_name") or "terminal_csv").strip(),
+                imported_filename=(payload.get("imported_filename") or "").strip(),
+                operator_user_id=operator_user_id,
+                current_roles=["Finance Admin"],
+            )
+            return {"run_id": run.id, "status": run.status, "exception_count": run.exception_count}
+
+        if normalized_type in {"bulk_menu_publish", "bulk_menu_update"}:
+            from app.repositories.catalog_repository import CatalogRepository
+            from app.services.catalog_service import CatalogService
+
+            result = CatalogService(CatalogRepository()).apply_bulk_update(
+                dish_ids=payload.get("dish_ids") or [],
+                publish=payload.get("publish"),
+                archived=payload.get("archived"),
+            )
+            return result
+
+        raise AppError("job_unsupported", "Unsupported job type.", 400)

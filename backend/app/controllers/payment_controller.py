@@ -80,6 +80,22 @@ def verify_callbacks():
     return jsonify({"code": "ok", "message": "Callback verification complete.", "data": verification})
 
 
+def simulate_jsapi_callback():
+    payload = request.get_json(silent=True) or request.form.to_dict(flat=True)
+    result = _service().simulate_jsapi_callback(payload, g.current_roles)
+    status_code = 200 if result["import_result"]["code"] == "ok" else 409
+    return (
+        jsonify(
+            {
+                "code": result["import_result"]["code"],
+                "message": "JSAPI simulator callback processed.",
+                "data": result,
+            }
+        ),
+        status_code,
+    )
+
+
 def get_payment(payment_id: str):
     payment = _service().get_payment(payment_id, g.current_roles)
     return jsonify({"code": "ok", "message": "Payment fetched.", "data": _serialize_payment(payment)})

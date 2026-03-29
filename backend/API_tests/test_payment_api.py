@@ -145,3 +145,37 @@ def test_invalid_signature_rejected(app):
 
     assert response.status_code == 409
     assert response.json["code"] == "callback_rejected"
+
+
+def test_jsapi_simulator_endpoint_imports_callback(app):
+    customer_client = app.test_client()
+    finance_client = app.test_client()
+
+    order_id = create_order(customer_client, app, checkout_key="payment-api-order-simulator")
+    finance_csrf = login(finance_client, "finance", "Finance#12345")
+    capture_response = finance_client.post(
+        "/api/payments/capture",
+        json={
+            "order_id": order_id,
+            "transaction_reference": "api-pay-sim",
+            "capture_amount": "10.25",
+            "status": "pending",
+        },
+        headers={"X-CSRF-Token": finance_csrf, "Accept": "application/json"},
+    )
+    assert capture_response.status_code == 201
+    payment_id = capture_response.json["data"]["id"]
+
+    simulate_response = finance_client.post(
+        "/api/payments/jsapi/simulate",
+        json={"transaction_reference": "api-pay-sim", "status": "success", "key_id": "simulator-v1"},
+        headers={"X-CSRF-Token": finance_csrf, "Accept": "application/json"},
+    )
+    assert simulate_response.status_code == 200
+    assert simulate_response.json["data"]["import_result"]["code"] == "ok"
+    assert simulate_response.json["data"]["package"]["key_id"] == "simulator-v1"
+
+    get_response = finance_client.get(f"/api/payments/{payment_id}", headers={"Accept": "application/json"})
+    assert get_response.status_code == 200
+    assert get_response.json["data"]["status"] == "success"
+    assert any(callback["key_id"] == "simulator-v1" for callback in get_response.json["data"]["callbacks"])

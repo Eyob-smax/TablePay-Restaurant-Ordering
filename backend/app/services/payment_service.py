@@ -13,7 +13,7 @@ from app.services.catalog_validation import parse_price
 from app.services.errors import AppError
 from app.services.payment_security import PaymentSecurity
 from app.services.rbac_service import RBACService
-from app.services.time_utils import ensure_utc_naive, utc_now_naive
+from app.services.time_utils import ensure_utc_naive, serialize_utc_datetime, utc_now_naive
 
 
 logger = structlog.get_logger(__name__)
@@ -138,6 +138,38 @@ class PaymentService:
             verification_status=callback.verification_status,
         )
         return response
+
+    def simulate_jsapi_callback(self, payload: dict, current_roles: list[str]) -> dict:
+        self.rbac.require_roles(current_roles, ["Finance Admin"])
+        reference = (payload.get("transaction_reference") or "").strip()
+        if not reference:
+            raise AppError("validation_error", "transaction_reference is required.", 400)
+
+        status = (payload.get("status") or "success").strip().lower()
+        if status not in {"success", "failed", "pending"}:
+            raise AppError("validation_error", "status must be success, failed, or pending.", 400)
+
+        key_id = (payload.get("key_id") or "simulator-v1").strip()
+        key = self.repository.get_signing_key(key_id)
+        if key is None:
+            raise AppError("not_found", "Signing key not found.", 404)
+
+        occurred_at = (payload.get("occurred_at") or serialize_utc_datetime(utc_now_naive()) or "").strip()
+        callback_payload = {
+            "transaction_reference": reference,
+            "status": status,
+            "occurred_at": occurred_at,
+        }
+        secret = self.security.decrypt_secret(key.encrypted_secret)
+        package = {
+            "key_id": key_id,
+            "signature": self.security.sign_payload(callback_payload, secret),
+            "transaction_reference": reference,
+            "payload": callback_payload,
+            "source_name": (payload.get("source_name") or "jsapi_simulator").strip(),
+        }
+        result = self.import_callback(package, current_roles)
+        return {"package": package, "import_result": result}
 
     def get_payment(self, payment_id: str, current_roles: list[str]):
         self.rbac.require_roles(current_roles, ["Finance Admin"])
