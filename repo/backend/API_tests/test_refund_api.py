@@ -84,6 +84,11 @@ def test_refund_create_requires_store_manager_approval_for_high_risk_flow(app):
     assert manager_confirm.json["data"]["status"] == "approved"
     assert any(event["event_type"] == "manager_stepup_approved" for event in manager_confirm.json["data"]["events"])
 
+    risk_events = finance_client.get("/api/refunds/risk-events?page=1&page_size=1", headers={"Accept": "application/json"})
+    assert risk_events.status_code == 200
+    assert risk_events.json["pagination"]["page"] == 1
+    assert risk_events.json["pagination"]["page_size"] == 1
+
 
 def test_nonce_replay_rejected(client, app):
     finance_csrf = login(client, "finance", "Finance#12345")

@@ -4,6 +4,7 @@ import json
 
 from flask import g, jsonify, render_template, request
 
+from app.controllers.pagination import paginate_collection, parse_pagination_args
 from app.controllers.ui_helpers import attach_feedback, redirect_anonymous_to_login
 from app.repositories.refund_repository import RefundRepository
 from app.services.errors import AppError
@@ -100,6 +101,8 @@ def list_risk_events():
     if g.current_user is None:
         raise AppError("authentication_required", "Authentication is required.", 401)
     events = _service().list_risk_events(g.current_roles)
+    pagination = parse_pagination_args(request.args)
+    page_events, pagination_meta = paginate_collection(events, pagination)
     return jsonify(
         {
             "code": "ok",
@@ -114,7 +117,8 @@ def list_risk_events():
                     "severity": event.severity,
                     "action_taken": event.action_taken,
                 }
-                for event in events
+                for event in page_events
             ],
+            "pagination": pagination_meta,
         }
     )

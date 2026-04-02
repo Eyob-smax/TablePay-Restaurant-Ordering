@@ -32,6 +32,43 @@ def test_like_favorite_comment_and_report_validation(client, app):
     assert bad_report.status_code == 400
 
 
+def test_community_actions_reject_missing_targets(client):
+    csrf_token = login(client, "customer", "Customer#1234")
+    missing_target = "missing-target-id"
+
+    like = client.post(
+        "/api/community/likes/toggle",
+        json={"target_type": "post", "target_id": missing_target},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert like.status_code == 404
+    assert like.json["code"] == "not_found"
+
+    favorite = client.post(
+        "/api/community/favorites/toggle",
+        json={"target_type": "dish", "target_id": missing_target},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert favorite.status_code == 404
+    assert favorite.json["code"] == "not_found"
+
+    comment = client.post(
+        "/api/community/comments",
+        json={"target_type": "post", "target_id": missing_target, "body": "Valid comment body"},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert comment.status_code == 404
+    assert comment.json["code"] == "not_found"
+
+    report = client.post(
+        "/api/community/reports",
+        json={"target_type": "post", "target_id": missing_target, "reason_code": "abuse"},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert report.status_code == 404
+    assert report.json["code"] == "not_found"
+
+
 def test_block_and_unblock_behavior(client, app):
     from app.repositories.auth_repository import AuthRepository
 

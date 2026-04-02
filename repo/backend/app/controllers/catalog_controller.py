@@ -5,6 +5,7 @@ import json
 
 from flask import current_app, g, jsonify, render_template, request, send_from_directory
 
+from app.controllers.pagination import paginate_collection, parse_pagination_args
 from app.controllers.ui_helpers import attach_feedback, redirect_anonymous_to_login
 from app.repositories.catalog_repository import CatalogRepository
 from app.services.catalog_service import CatalogService
@@ -136,9 +137,18 @@ def list_dishes():
         available_at=filters["available_at"],
         published_only=published_only,
     )
+    pagination = parse_pagination_args(request.args)
+    page_dishes, pagination_meta = paginate_collection(dishes, pagination)
     if request.headers.get("HX-Request") == "true":
-        return render_template("partials/dish_list.html", dishes=dishes)
-    return jsonify({"code": "ok", "message": "Dishes fetched.", "data": [_serialize_dish(dish) for dish in dishes]})
+        return render_template("partials/dish_list.html", dishes=page_dishes)
+    return jsonify(
+        {
+            "code": "ok",
+            "message": "Dishes fetched.",
+            "data": [_serialize_dish(dish) for dish in page_dishes],
+            "pagination": pagination_meta,
+        }
+    )
 
 
 def get_dish(dish_id: str):

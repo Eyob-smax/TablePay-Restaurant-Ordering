@@ -41,6 +41,14 @@ def test_reconciliation_mutations_require_authenticated_session(client):
     assert resolve_response.status_code == 401
     assert resolve_response.json["code"] == "authentication_required"
 
+    list_runs_response = client.get("/api/finance/reconciliation/runs", headers={"Accept": "application/json"})
+    assert list_runs_response.status_code == 401
+    assert list_runs_response.json["code"] == "authentication_required"
+
+    get_run_response = client.get("/api/finance/reconciliation/runs/nonexistent-run", headers={"Accept": "application/json"})
+    assert get_run_response.status_code == 401
+    assert get_run_response.json["code"] == "authentication_required"
+
 
 def test_reconciliation_import_and_list_runs(client, app):
     finance_csrf = login(client, "finance", "Finance#12345")
@@ -69,9 +77,11 @@ def test_reconciliation_import_and_list_runs(client, app):
     assert import_response.status_code == 201
     run_id = import_response.json["data"]["id"]
 
-    list_response = client.get("/api/finance/reconciliation/runs", headers={"Accept": "application/json"})
+    list_response = client.get("/api/finance/reconciliation/runs?page=1&page_size=1", headers={"Accept": "application/json"})
     assert list_response.status_code == 200
     assert any(run["id"] == run_id for run in list_response.json["data"])
+    assert list_response.json["pagination"]["page"] == 1
+    assert list_response.json["pagination"]["page_size"] == 1
 
 
 def test_reconciliation_async_import_uses_job_queue(client, app):

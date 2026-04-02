@@ -16,6 +16,21 @@ All JSON errors use:
 
 All response timestamps are serialized in UTC ISO 8601 form with a trailing `Z`.
 
+List endpoints support optional `page` and `page_size` query parameters.
+
+When a list endpoint returns JSON, the response includes a `pagination` object:
+
+```json
+{
+  "page": 1,
+  "page_size": 20,
+  "total_items": 42,
+  "total_pages": 3,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
 For HTMX-style progressive enhancement requests, the server can also return:
 
 - `X-Toast-Message`
@@ -93,6 +108,8 @@ Query parameters:
 - `tag` repeatable
 - `available_at` in ISO 8601 datetime format; offset-aware values are normalized to UTC before filtering
 - `include_sold_out=1`
+- `page` optional positive integer
+- `page_size` optional positive integer
 
 ### `GET /api/dishes/{id}`
 
@@ -276,6 +293,11 @@ Finance Admin only. Always queues reconciliation processing as an async ops job 
 
 Returns reconciliation run summaries.
 
+Query parameters:
+
+- `page` optional positive integer
+- `page_size` optional positive integer
+
 ### `GET /api/finance/reconciliation/runs/{id}`
 
 Returns a reconciliation run with row and exception details.
@@ -318,9 +340,15 @@ Returns refund status and refund-event history.
 
 Returns recorded refund risk events.
 
+Query parameters:
+
+- `page` optional positive integer
+- `page_size` optional positive integer
+
 ## Community
 
 ### `POST /api/community/likes/toggle`
+
 ### `POST /api/community/favorites/toggle`
 
 ```json
@@ -329,6 +357,8 @@ Returns recorded refund risk events.
   "target_id": "post-uuid"
 }
 ```
+
+`target_id` must reference an existing object for the provided `target_type`.
 
 ### `POST /api/community/comments`
 
@@ -352,6 +382,7 @@ Allowed `reason_code` values:
 - `other`
 
 ### `POST /api/community/blocks`
+
 ### `DELETE /api/community/blocks/{blockedUserId}`
 
 ## Moderation and governance
@@ -359,6 +390,11 @@ Allowed `reason_code` values:
 ### `GET /api/moderation/queue`
 
 Moderator only. Returns queue items and current state.
+
+Query parameters:
+
+- `page` optional positive integer
+- `page_size` optional positive integer
 
 ### `POST /api/moderation/items/{id}/decision`
 
@@ -403,6 +439,11 @@ Finance Admin only. Replay-protected governance endpoint.
 
 Returns queued, running, completed, and dead-letter jobs.
 
+Query parameters:
+
+- `page` optional positive integer
+- `page_size` optional positive integer
+
 ### `POST /api/admin/ops/jobs/process`
 
 Finance Admin only. Processes queued jobs immediately.
@@ -417,9 +458,19 @@ Finance Admin only. Processes queued jobs immediately.
 
 Returns recent persisted rate-limit buckets.
 
+Query parameters:
+
+- `page` optional positive integer
+- `page_size` optional positive integer
+
 ### `GET /api/admin/ops/circuit-breakers`
 
 Returns circuit-breaker state per endpoint.
+
+Query parameters:
+
+- `page` optional positive integer
+- `page_size` optional positive integer
 
 ### `POST /api/admin/ops/backups/run`
 

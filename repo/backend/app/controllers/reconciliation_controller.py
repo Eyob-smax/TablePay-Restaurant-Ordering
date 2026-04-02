@@ -4,6 +4,7 @@ import json
 
 from flask import g, jsonify, render_template, request
 
+from app.controllers.pagination import paginate_collection, parse_pagination_args
 from app.controllers.ui_helpers import attach_feedback, redirect_anonymous_to_login
 from app.repositories.reconciliation_repository import ReconciliationRepository
 from app.services.errors import AppError
@@ -134,6 +135,8 @@ def enqueue_reconciliation_import():
 def list_runs():
     _require_authenticated_user()
     runs = _service().list_runs(g.current_roles)
+    pagination = parse_pagination_args(request.args)
+    page_runs, pagination_meta = paginate_collection(runs, pagination)
     return jsonify(
         {
             "code": "ok",
@@ -147,8 +150,9 @@ def list_runs():
                     "matched_rows": run.matched_rows,
                     "exception_count": run.exception_count,
                 }
-                for run in runs
+                for run in page_runs
             ],
+            "pagination": pagination_meta,
         }
     )
 

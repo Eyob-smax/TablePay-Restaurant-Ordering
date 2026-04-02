@@ -24,8 +24,10 @@ def test_ops_endpoints_and_backup_restore(client, app, tmp_path):
         db_path.write_text("ops-backup-test", encoding="latin1")
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path.as_posix()}"
 
-    jobs = client.get("/api/admin/ops/jobs", headers={"Accept": "application/json"})
+    jobs = client.get("/api/admin/ops/jobs?page=1&page_size=1", headers={"Accept": "application/json"})
     assert jobs.status_code == 200
+    assert jobs.json["pagination"]["page"] == 1
+    assert jobs.json["pagination"]["page_size"] == 1
 
     backup = client.post("/api/admin/ops/backups/run", headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"})
     assert backup.status_code == 200
@@ -33,9 +35,13 @@ def test_ops_endpoints_and_backup_restore(client, app, tmp_path):
     restore = client.post("/api/admin/ops/restore/test", headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"})
     assert restore.status_code == 200
 
-    breakers = client.get("/api/admin/ops/circuit-breakers", headers={"Accept": "application/json"})
+    breakers = client.get("/api/admin/ops/circuit-breakers?page=1&page_size=1", headers={"Accept": "application/json"})
     assert breakers.status_code == 200
+    assert breakers.json["pagination"]["page"] == 1
+    assert breakers.json["pagination"]["page_size"] == 1
 
-    rate_limits = client.get("/api/admin/ops/rate-limits", headers={"Accept": "application/json"})
+    rate_limits = client.get("/api/admin/ops/rate-limits?page=1&page_size=1", headers={"Accept": "application/json"})
     assert rate_limits.status_code == 200
+    assert rate_limits.json["pagination"]["page"] == 1
+    assert rate_limits.json["pagination"]["page_size"] == 1
 from pathlib import Path

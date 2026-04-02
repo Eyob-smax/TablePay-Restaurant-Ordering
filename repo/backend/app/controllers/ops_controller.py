@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import g, jsonify, request
 
+from app.controllers.pagination import paginate_collection, parse_pagination_args
 from app.repositories.ops_repository import OpsRepository
 from app.services.errors import AppError
 from app.services.ops_service import OpsService
@@ -22,6 +23,8 @@ def _require_admin():
 def list_jobs():
     _require_admin()
     jobs = _service().list_jobs()
+    pagination = parse_pagination_args(request.args)
+    page_jobs, pagination_meta = paginate_collection(jobs, pagination)
     return jsonify(
         {
             "code": "ok",
@@ -35,8 +38,9 @@ def list_jobs():
                     "available_at": serialize_utc_datetime(job.available_at),
                     "last_error": job.last_error,
                 }
-                for job in jobs
+                for job in page_jobs
             ],
+            "pagination": pagination_meta,
         }
     )
 
@@ -73,13 +77,31 @@ def process_jobs():
 def list_rate_limits():
     _require_admin()
     buckets = _service().list_rate_limits()
-    return jsonify({"code": "ok", "message": "Rate limits fetched.", "data": [{"bucket_key": bucket.bucket_key, "request_count": bucket.request_count} for bucket in buckets]})
+    pagination = parse_pagination_args(request.args)
+    page_buckets, pagination_meta = paginate_collection(buckets, pagination)
+    return jsonify(
+        {
+            "code": "ok",
+            "message": "Rate limits fetched.",
+            "data": [{"bucket_key": bucket.bucket_key, "request_count": bucket.request_count} for bucket in page_buckets],
+            "pagination": pagination_meta,
+        }
+    )
 
 
 def list_breakers():
     _require_admin()
     breakers = _service().list_breakers()
-    return jsonify({"code": "ok", "message": "Circuit breakers fetched.", "data": [{"endpoint_key": breaker.endpoint_key, "state": breaker.state, "failure_count": breaker.failure_count} for breaker in breakers]})
+    pagination = parse_pagination_args(request.args)
+    page_breakers, pagination_meta = paginate_collection(breakers, pagination)
+    return jsonify(
+        {
+            "code": "ok",
+            "message": "Circuit breakers fetched.",
+            "data": [{"endpoint_key": breaker.endpoint_key, "state": breaker.state, "failure_count": breaker.failure_count} for breaker in page_breakers],
+            "pagination": pagination_meta,
+        }
+    )
 
 
 def run_backup():

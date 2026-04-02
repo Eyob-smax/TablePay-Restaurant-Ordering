@@ -24,6 +24,14 @@ def test_get_dishes_filters_by_category(client):
     assert response.json["data"][0]["category_slug"] == "noodles"
 
 
+def test_get_dishes_supports_explicit_pagination(client):
+    response = client.get("/api/dishes?page=1&page_size=1", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    assert len(response.json["data"]) <= 1
+    assert response.json["pagination"]["page"] == 1
+    assert response.json["pagination"]["page_size"] == 1
+
+
 def test_manager_create_dish_forbidden_for_customer(client):
     _response, csrf_token = login(client, "customer", "Customer#1234")
     response = client.post(

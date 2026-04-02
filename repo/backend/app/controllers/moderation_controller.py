@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import g, jsonify, render_template, request
 
+from app.controllers.pagination import paginate_collection, parse_pagination_args
 from app.controllers.ui_helpers import attach_feedback, redirect_anonymous_to_login
 from app.repositories.moderation_repository import ModerationRepository
 from app.services.errors import AppError
@@ -52,7 +53,16 @@ def get_queue():
         raise AppError("authentication_required", "Authentication is required.", 401)
     status = request.args.get("status")
     items = _service().list_queue(g.current_roles, status=status)
-    return jsonify({"code": "ok", "message": "Moderation queue fetched.", "data": [_serialize_item(item) for item in items]})
+    pagination = parse_pagination_args(request.args)
+    page_items, pagination_meta = paginate_collection(items, pagination)
+    return jsonify(
+        {
+            "code": "ok",
+            "message": "Moderation queue fetched.",
+            "data": [_serialize_item(item) for item in page_items],
+            "pagination": pagination_meta,
+        }
+    )
 
 
 def decide_item(item_id: str):

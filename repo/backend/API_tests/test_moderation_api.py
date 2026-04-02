@@ -44,8 +44,10 @@ def test_moderator_permission_boundary_and_decision(app):
     assert customer_queue.status_code == 403
 
     moderator_csrf = login(moderator_client, "moderator", "Moderator#123")
-    queue = moderator_client.get("/api/moderation/queue", headers={"Accept": "application/json"})
+    queue = moderator_client.get("/api/moderation/queue?page=1&page_size=1", headers={"Accept": "application/json"})
     assert queue.status_code == 200
+    assert queue.json["pagination"]["page"] == 1
+    assert queue.json["pagination"]["page_size"] == 1
     item_id = queue.json["data"][0]["id"]
 
     bad_decision = moderator_client.post(

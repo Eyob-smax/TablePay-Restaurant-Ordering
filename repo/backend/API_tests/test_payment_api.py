@@ -77,6 +77,46 @@ def test_finance_capture_and_get_payment(app):
     assert "encrypted_secret" not in json.dumps(get_response.json)
 
 
+def test_payment_endpoints_require_authenticated_session(client):
+    csrf_token = fetch_csrf(client)
+
+    capture = client.post(
+        "/api/payments/capture",
+        json={"order_id": "missing", "transaction_reference": "anon-1", "capture_amount": "1.00", "status": "pending"},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert capture.status_code == 401
+    assert capture.json["code"] == "authentication_required"
+
+    verify = client.post(
+        "/api/payments/callbacks/verify",
+        json={},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert verify.status_code == 401
+    assert verify.json["code"] == "authentication_required"
+
+    import_response = client.post(
+        "/api/payments/callbacks/import",
+        json={},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert import_response.status_code == 401
+    assert import_response.json["code"] == "authentication_required"
+
+    simulate = client.post(
+        "/api/payments/jsapi/simulate",
+        json={"transaction_reference": "anon-1", "status": "success", "key_id": "simulator-v1"},
+        headers={"X-CSRF-Token": csrf_token, "Accept": "application/json"},
+    )
+    assert simulate.status_code == 401
+    assert simulate.json["code"] == "authentication_required"
+
+    get_response = client.get("/api/payments/nonexistent", headers={"Accept": "application/json"})
+    assert get_response.status_code == 401
+    assert get_response.json["code"] == "authentication_required"
+
+
 def test_callback_verify_and_import_duplicate_behavior(app):
     customer_client = app.test_client()
     finance_client = app.test_client()
